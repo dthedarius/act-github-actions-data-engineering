@@ -1,0 +1,105 @@
+name: Bump version on PR label
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  bump-version:
+    if: github.event.pull_request_merged == true
+    runs-on: ubuntu-latest
+    env:
+      TESTING_ENV: ${{ env.TESTING_ENV }}
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Load environment variables
+        run: |
+          if [ -f .env/${{ env.TESTING_ENV }}.env ]; then
+            set -a
+            source .env/${{ env.TESTING_ENV }}.env
+            set +a
+          fi
+
+      - name: Pre/Post Cleaners
+        if: env.TESTING_ENV != 'LOCAL'
+        uses: dktunited/.github/actions/cleaner@main
+
+      - name: Checkout (read-only)
+        if: env.TESTING_ENV != 'LOCAL'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Extract PR info and compute version bump
+        id: version
+        run: |
+          EVENT_JSON=$(cat $GITHUB_EVENT_PATH)
+          LABELS=$(echo "$EVENT_JSON" | jq -r '.pull_request.labels[].name' | paste -sd "," -)
+          PR_NUMBER=$(echo "$EVENT_JSON" | jq -r '.pull_request.number')
+
+          if [ ! -f VERSION ]; then
+            echo "VERSION file not found!" >&2
+            exit 1
+          fi
+
+          CURRENT_VERSION=$(cat VERSION | tr -d ' \n')
+          echo "Current VERSION: $CURRENT_VERSION"
+
+          if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format: $CURRENT_VERSION"
+            exit 1
+          fi
+
+          MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3)
+
+          if echo "$LABELS" | grep -q "major"; then
+            NEW_VERSION="$((MAJOR + 1)).0.0"
+          elif echo "$LABELS" | grep -q "minor"; then
+            NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+          elif echo "$LABELS" | grep -q "patch"; then
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          else
+            echo "No valid version label found." >&2
+            exit 1
+          fi
+
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+
+      - name: Checkout with SSH (for writing)
+        if: env.TESTING_ENV != 'LOCAL'
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          fetch-depth: 0
+
+      - name: Apply version bump and push
+        if: github.event.pull_request.merged == true && env.TESTING_ENV != 'LOCAL'
+        run: |
+          echo "${{ env.NEW_VERSION }}" > VERSION
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add VERSION
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "📖 Bump version to ${{ env.NEW_VERSION }} (from PR #${{ env.PR_NUMBER }})"
+          git tag -a "v${{ env.NEW_VERSION }}" -m "Release v${{ env.NEW_VERSION }}"
+          git push origin main --follow-tags
+
+      - name: Confirm Version Tag
+        run: echo "✅ Tagged and pushed v${{ env.NEW_VERSION }}"
