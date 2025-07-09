@@ -1,0 +1,8 @@
+major:
+  - head-branch: ['breaking']
+
+minor:
+  - head-branch: ['feat']
+
+patch:
+  - head-branch: ['fix', 'hotfix', 'docs', 'test']
