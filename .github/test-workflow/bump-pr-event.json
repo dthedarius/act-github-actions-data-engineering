@@ -1,0 +1,10 @@
+{
+    "pull_request": {
+        "merged": true,
+        "number": 42,
+        "title": "Add new feature",
+        "labels": [
+            { "name": "minor"}
+        ]
+    }
+}
