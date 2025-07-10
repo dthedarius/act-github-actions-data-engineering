@@ -1,3 +1,2 @@
 -P ubuntu-latest=localhost:5000/my-gh-actions-bump
 --secret-file .test-secrets
---env-file env/local.env
