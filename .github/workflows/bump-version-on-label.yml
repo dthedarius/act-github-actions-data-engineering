@@ -8,20 +8,28 @@ jobs:
   bump-version:
     if: github.event.pull_request_merged == true
     runs-on: ubuntu-latest
-    env:
-      TESTING_ENV: ${{ env.TESTING_ENV }}
     permissions:
       contents: write
       pull-requests: read
 
     steps:
-      - name: Load environment variables
+      - name: Load environment file based on TESTING_ENV
         run: |
-          if [ -f .env/${{ env.TESTING_ENV }}.env ]; then
-            set -a
-            source .env/${{ env.TESTING_ENV }}.env
-            set +a
+          echo "Loading env/${TESTING_ENV}.env"
+          if [ -f "env/${TESTING_ENV}.env" ]; then
+            while IFS='=' read -r key value; do
+              if [[ ! "$key" =~ ^# && -n "$key" ]]; then
+                echo "$key=$value" >> "$GITHUB_ENV"
+              fi
+            done < "env/${TESTING_ENV}.env"
+          else
+            echo "No env file found for $TESTING_ENV"
+            exit 1
           fi
+
+      - name: Echo ENV
+        run: |
+          echo "testing_env: ${{ env.TESTING_ENV }}"
 
       - name: Pre/Post Cleaners
         if: env.TESTING_ENV != 'LOCAL'
