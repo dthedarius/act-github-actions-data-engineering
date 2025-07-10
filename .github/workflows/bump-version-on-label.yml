@@ -1,4 +1,4 @@
-name: Bump version on PR label
+name: Bump version based on PR label
 
 on:
   pull_request:
@@ -6,40 +6,20 @@ on:
 
 jobs:
   bump-version:
-    if: github.event.pull_request_merged == true
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: read
 
     steps:
-      - name: Load environment file based on TESTING_ENV
-        run: |
-          echo "Loading env/${TESTING_ENV}.env"
-          if [ -f "env/${TESTING_ENV}.env" ]; then
-            while IFS='=' read -r key value; do
-              if [[ ! "$key" =~ ^# && -n "$key" ]]; then
-                echo "$key=$value" >> "$GITHUB_ENV"
-              fi
-            done < "env/${TESTING_ENV}.env"
-          else
-            echo "No env file found for $TESTING_ENV"
-            exit 1
-          fi
-
-      - name: Echo ENV
-        run: |
-          echo "testing_env: ${{ env.TESTING_ENV }}"
-
-      - name: Pre/Post Cleaners
-        if: env.TESTING_ENV != 'LOCAL'
-        uses: dktunited/.github/actions/cleaner@main
+      - name: Load TESTING_ENV from shell into GitHub Actions env
+        run: echo "TESTING_ENV=${TESTING_ENV}" >> $GITHUB_ENV
 
       - name: Checkout (read-only)
-        if: env.TESTING_ENV != 'LOCAL'
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+            fetch-depth: 0
 
       - name: Set up Git
         run: |
@@ -60,12 +40,12 @@ jobs:
 
           CURRENT_VERSION=$(cat VERSION | tr -d ' \n')
           echo "Current VERSION: $CURRENT_VERSION"
-
+          
           if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Invalid version format: $CURRENT_VERSION"
             exit 1
           fi
-
+          
           MAJOR=$(echo "$CURRENT_VERSION" | cut -d. -f1)
           MINOR=$(echo "$CURRENT_VERSION" | cut -d. -f2)
           PATCH=$(echo "$CURRENT_VERSION" | cut -d. -f3)
@@ -84,13 +64,6 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
 
-      - name: Checkout with SSH (for writing)
-        if: env.TESTING_ENV != 'LOCAL'
-        uses: actions/checkout@v4
-        with:
-          ssh-key: ${{ secrets.DEPLOY_KEY }}
-          fetch-depth: 0
-
       - name: Apply version bump and push
         if: github.event.pull_request.merged == true && env.TESTING_ENV != 'LOCAL'
         run: |
@@ -105,9 +78,9 @@ jobs:
             exit 0
           fi
 
-          git commit -m "📖 Bump version to ${{ env.NEW_VERSION }} (from PR #${{ env.PR_NUMBER }})"
+          git commit -m "🔖 Bump version to ${{ env.NEW_VERSION }} (from PR #${{ env.PR_NUMBER }})"
           git tag -a "v${{ env.NEW_VERSION }}" -m "Release v${{ env.NEW_VERSION }}"
           git push origin main --follow-tags
 
       - name: Confirm Version Tag
-        run: echo "✅ Tagged and pushed v${{ env.NEW_VERSION }}"
+        run: echo "✅ Tagged and pushed v${{ steps.bump.outputs.new_version }}"
